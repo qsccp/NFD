@@ -123,6 +123,9 @@ TcpChannel::createFace(ip::tcp::socket&& socket,
     if (params.defaultCongestionThreshold) {
       options.defaultCongestionThreshold = *params.defaultCongestionThreshold;
     }
+    if (params.bandwidth) {
+      options.C = *params.bandwidth;
+    }
 
     auto linkService = make_unique<GenericLinkService>(options);
     auto faceScope = m_determineFaceScope(socket.local_endpoint().address(),

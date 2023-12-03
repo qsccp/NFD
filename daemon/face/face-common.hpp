@@ -81,6 +81,7 @@ struct FaceParams
   optional<time::nanoseconds> baseCongestionMarkingInterval;
   optional<uint64_t> defaultCongestionThreshold;
   optional<ssize_t> mtu;
+  optional<uint64_t> bandwidth;
   bool wantLocalFields = false;
   bool wantLpReliability = false;
   boost::logic::tribool wantCongestionMarking = boost::logic::indeterminate;

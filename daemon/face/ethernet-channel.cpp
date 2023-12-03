@@ -204,6 +204,9 @@ EthernetChannel::createFace(const ethernet::Address& remoteEndpoint,
   if (params.mtu) {
     options.overrideMtu = *params.mtu;
   }
+  if (params.bandwidth) {
+    options.C = *params.bandwidth;
+  }
 
   auto linkService = make_unique<GenericLinkService>(options);
   auto transport = make_unique<UnicastEthernetTransport>(*m_localEndpoint, remoteEndpoint,

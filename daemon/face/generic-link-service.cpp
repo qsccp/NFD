@@ -24,7 +24,7 @@
  */
 
 #include "generic-link-service.hpp"
-
+#include <iostream>
 #include <ndn-cxx/lp/pit-token.hpp>
 #include <ndn-cxx/lp/tags.hpp>
 
@@ -47,10 +47,44 @@ GenericLinkService::GenericLinkService(const GenericLinkService::Options& option
   , m_lastSeqNo(-2)
   , m_nextMarkTime(time::steady_clock::TimePoint::max())
   , m_nMarkedSinceInMarkingState(0)
+  , globalSp(options.C * 0.99, options.vqSize)
 {
+  std::cout << "C: " << options.C << std::endl;
   m_reassembler.beforeTimeout.connect([this] (auto...) { ++this->nReassemblyTimeouts; });
   m_reliability.onDroppedInterest.connect([this] (const auto& i) { this->notifyDroppedInterest(i); });
   nReassembling.observe(&m_reassembler);
+  this->sendPacketCallback = [this](std::shared_ptr<VirtualQueueItem> taskPtr) {
+        this->globalSp.triggerCalObjectRate();
+        if (taskPtr != nullptr) {
+            const Block &block = taskPtr->item->wireEncode();
+            // std::cout << "interest wireEncode size: " << block.size() << std::endl;
+            lp::Packet lpPacket(block);
+            // std::cout << "Interest lppacket size before encode lp fields: " << lpPacket.wireEncode().size() << std::endl;
+            encodeLpFields(*(taskPtr->item), lpPacket);
+            // std::cout << "Interest lppacket size after encode lp fields: " << lpPacket.wireEncode().size() << std::endl;
+            this->sendNetPacket(std::move(lpPacket), true);
+            // lp::Packet lpPacket(taskPtr->item->wireEncode());
+            // encodeLpFields(*(taskPtr->item), lpPacket);
+            // this->sendNetPacket(std::move(lpPacket), taskPtr->endpointId, true);
+        }
+        // 得到下一个需要调度的包
+        auto newTaskPtr = this->globalSp.scheduleNext();
+        if (newTaskPtr == nullptr) {
+            //NFD_LOG_ERROR("FUCK");
+            // std::cout << "FUCK" << std::endl;
+            // 如果没有可调度的包,则 1 ms 之后再调度
+            this->canScheduler = true;
+//            getScheduler().schedule(time::milliseconds(1), std::bind(this->sendPacketCallback, nullptr));
+        } else {
+            // 等待足够的 token 再发送
+            this->canScheduler = false;
+            // std::cout << "Route waitTime: " << newTaskPtr->waitNsTime << std::endl;
+            // NFD_LOG_DEBUG("Route waitTime: " << newTaskPtr->waitNsTime);
+            getScheduler().schedule(time::nanoseconds((uint32_t)(newTaskPtr->waitNsTime)),
+                                    std::bind(this->sendPacketCallback, newTaskPtr));
+        }
+    };
+    // getScheduler().schedule(time::nanoseconds(0), std::bind(this->sendPacketCallback, nullptr));
 }
 
 void
@@ -115,11 +149,34 @@ GenericLinkService::sendLpPacket(lp::Packet&& pkt)
 void
 GenericLinkService::doSendInterest(const Interest& interest)
 {
-  lp::Packet lpPacket(interest.wireEncode());
+  if (interest.getName().getPrefix(1).toUri() == "/localhost") {
+        const Block &block = interest.wireEncode();
+        // // std::cout << "interest wireEncode size: " << block.size() << std::endl;
+        lp::Packet lpPacket(block);
+        // // std::cout << "lppacket size before encode lp fields: " << lpPacket.wireEncode().size() << std::endl;
+        encodeLpFields(interest, lpPacket);
+        // // std::cout << "lppacket size after encode lp fields: " << lpPacket.wireEncode().size() << std::endl;
+        this->sendNetPacket(std::move(lpPacket), true);
+    } else {
+        this->globalSp.appendInterest(interest);
+        if (this->canScheduler) {
+            this->sendPacketCallback(nullptr);
+        }
+        //if (!success) {
+        //    // send Nack
+        //    lp::Nack nack(interest);
+        //    nack.setReason(lp::NackReason::CONGESTION);
+        //    if (this->nwfq.canMark(nack)) {
+        //        // 拥塞标记
+        //        nack.getInterest().setTag(make_shared<lp::CongestionMarkTag>(1));
+        //    }
+        //    this->receiveNack(nack, endpointId);
+        //}
+    }
 
-  encodeLpFields(interest, lpPacket);
+  // encodeLpFields(interest, lpPacket);
 
-  this->sendNetPacket(std::move(lpPacket), true);
+  // this->sendNetPacket(std::move(lpPacket), true);
 }
 
 void
@@ -351,7 +408,7 @@ GenericLinkService::decodeNetPacket(const Block& netPkt, const lp::Packet& first
   }
   catch (const tlv::Error& e) {
     ++this->nInNetInvalid;
-    NFD_LOG_FACE_WARN("packet parse error (" << e.what() << "): DROP");
+    NFD_LOG_FACE_WARN("packet parse error (" << e.what() << "): DROP" << netPkt.type());
   }
 }
 
@@ -408,6 +465,8 @@ GenericLinkService::decodeInterest(const Block& netPkt, const lp::Packet& firstP
     interest->setTag(make_shared<lp::PitToken>(firstPkt.get<lp::PitTokenField>()));
   }
 
+  this->globalSp.receiveInterest(*interest);
+  this->globalSp.triggerCalObjectRate();
   this->receiveInterest(*interest, endpointId);
 }
 
@@ -462,6 +521,13 @@ GenericLinkService::decodeData(const Block& netPkt, const lp::Packet& firstPkt,
     }
   }
 
+  // 不处理本地命令通信
+  if (data->getName().getPrefix(1).toUri() != "/localhost") {
+      // TR = min(TR, OR)
+      this->globalSp.assignObjectRate(*data);
+  }
+
+  this->globalSp.triggerCalObjectRate();
   this->receiveData(*data, endpointId);
 }
 

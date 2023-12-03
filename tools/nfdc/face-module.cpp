@@ -59,7 +59,8 @@ FaceModule::registerCommands(CommandParser& parser)
     .addArg("congestion-marking", ArgValueType::BOOLEAN, Required::NO, Positional::NO)
     .addArg("congestion-marking-interval", ArgValueType::UNSIGNED, Required::NO, Positional::NO)
     .addArg("default-congestion-threshold", ArgValueType::UNSIGNED, Required::NO, Positional::NO)
-    .addArg("mtu", ArgValueType::STRING, Required::NO, Positional::NO);
+    .addArg("mtu", ArgValueType::STRING, Required::NO, Positional::NO)
+    .addArg("bandwidth", ArgValueType::UNSIGNED, Required::NO, Positional::NO);
   parser.addCommand(defFaceCreate, &FaceModule::create);
 
   CommandDefinition defFaceDestroy("face", "destroy");
@@ -162,6 +163,7 @@ FaceModule::create(ExecuteContext& ctx)
   auto baseCongestionMarkingIntervalMs = ctx.args.getOptional<uint64_t>("congestion-marking-interval");
   auto defaultCongestionThreshold = ctx.args.getOptional<uint64_t>("default-congestion-threshold");
   auto mtuArg = ctx.args.getOptional<std::string>("mtu");
+  auto bandwidth = ctx.args.getOptional<uint64_t>("bandwidth");
 
   // MTU is nominally a uint64_t, but can be the string value 'auto' to unset an override MTU
   optional<uint64_t> mtu;
@@ -269,6 +271,9 @@ FaceModule::create(ExecuteContext& ctx)
     }
     if (mtu) {
       params.setMtu(*mtu);
+    }
+    if (bandwidth) {
+      params.setBandwidth(*bandwidth);
     }
 
     ctx.controller.start<ndn::nfd::FaceCreateCommand>(

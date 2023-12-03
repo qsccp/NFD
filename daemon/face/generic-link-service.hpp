@@ -30,6 +30,7 @@
 #include "lp-fragmenter.hpp"
 #include "lp-reassembler.hpp"
 #include "lp-reliability.hpp"
+#include "queues.hpp"
 
 namespace nfd {
 namespace face {
@@ -164,6 +165,9 @@ public:
      *  being set with canOverrideMtuTo().
      */
     ssize_t overrideMtu = std::numeric_limits<ssize_t>::max();
+    
+    uint64_t C = 100000000; // 100Mbps
+    size_t vqSize = 20;
   };
 
   /** \brief counters provided by GenericLinkService
@@ -310,6 +314,9 @@ PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   /// number of marked packets in the current incident of congestion
   size_t m_nMarkedSinceInMarkingState;
 
+  GlobalSP globalSp;
+  bool canScheduler = true;
+  std::function<void(std::shared_ptr<VirtualQueueItem>)> sendPacketCallback;
   friend class LpReliability;
 };
 

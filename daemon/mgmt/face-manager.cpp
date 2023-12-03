@@ -120,6 +120,9 @@ FaceManager::createFace(const ControlParameters& parameters,
     // The face system limits MTUs to ssize_t, but the management protocol uses uint64_t
     faceParams.mtu = std::min<uint64_t>(std::numeric_limits<ssize_t>::max(), parameters.getMtu());
   }
+  if (parameters.hasBandwidth()) {
+    faceParams.bandwidth = parameters.getBandwidth();
+  }
   faceParams.wantLocalFields = parameters.hasFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED) &&
                                parameters.getFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED);
   faceParams.wantLpReliability = parameters.hasFlagBit(ndn::nfd::BIT_LP_RELIABILITY_ENABLED) &&
